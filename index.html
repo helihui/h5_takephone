@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>实时摄像头应用</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            background-color: #1e1e1e;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        #app {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .camera-options {
+            display: flex;
+            justify-content: space-around;
+            padding: 10px;
+        }
+        .camera-option {
+            background-color: #333;
+            border: none;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #video-container {
+            position: relative;
+            width: 90vw; /* 设置宽度为视口宽度的90% */
+            height: 90vw; /* 高度等于宽度，保持1:1比例 */
+            max-width: 90vh; /* 最大宽度为视口高度的90% */
+            max-height: 90vh; /* 最大高度为视口高度的90% */
+            margin: 0 auto; /* 水平居中 */
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+        #outline {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url('./1.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            pointer-events: none;
+        }
+        #outline::after {
+            content: '请将面部置于框内';
+            position: absolute;
+            bottom: 5px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 16px;
+            white-space: nowrap;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;           
+        }
+        .take-photo-btn {
+            background-color: white;
+            border: none;
+            color: black;
+            padding: 15px 30px; /* 稍微减小按钮大小 */
+            border-radius: 50px;
+            font-size: 18px; /* 稍微减小字体大小 */
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .description {
+            background-color: white;
+            color: #333;
+            padding: 15px;
+            margin: 10px;
+            border-radius: 10px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .description h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: #1e1e1e;
+        }
+        .description ul {
+            padding-left: 20px;
+            margin-bottom: 0;
+        }
+        .description li {
+            margin-bottom: 5px;
+        }
+        .modal {
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            padding: 20px;
+            border-radius: 10px;
+            width: 80%;
+            max-width: 500px;
+        }
+
+        .modal-image {
+            width: 100%;
+            height: auto;
+            border-radius: 5px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+        }
+
+        .modal-button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .confirm-button {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .retake-button {
+            background-color: #f44336;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="header">
+        </div>
+        <div class="camera-options">
+            <button class="camera-option" @click="switchCamera('user')">前置相机</button>
+            <button class="camera-option" @click="switchCamera('environment')">后置相机</button>
+            <button class="camera-option" @click="switchCamera('environment', true)">后置超广角相机</button>
+        </div>
+        <div id="video-container">
+            <video id="video" ref="video" autoplay playsinline></video>
+            <div id="outline"></div>
+        </div>
+        <div class="controls">
+            <button class="take-photo-btn" @click="takePhoto">拍照</button>
+        </div>
+        <div class="description">
+            <h3>拍照注意事项：</h3>
+            <ul>
+                <li>请确保面部在框内，并且清晰可见</li>
+                <li>避免强光或阴影，保持光线均匀</li>
+                <li>保持自然表情，不要佩戴墨镜或帽子</li>
+                <li>拍摄时请保持稳定，避免晃动</li>
+                <li>如果使用后置摄像头，请确保镜头干净</li>
+            </ul>
+        </div>
+        <div class="modal" v-if="showModal">
+            <div class="modal-content">
+                <img :src="photoData" alt="拍摄的照片" class="modal-image">
+                <div class="modal-buttons">
+                    <button @click="confirmPhoto" class="modal-button confirm-button">确认</button>
+                    <button @click="retakePhoto" class="modal-button retake-button">重拍</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        new Vue({
+            el: '#app',
+            data: {
+                stream: null,
+                facingMode: 'user',
+                photoTaken: false,
+                photoData: '',
+                currentDomain: 'qrss.netlify.app',
+                showModal: false
+            },
+            mounted() {
+                this.switchCamera('user',true);
+            },
+            methods: {
+                async startCamera() {
+                    try {
+                        var that = this;
+                        const constraints = {
+                            video: {
+                                facingMode: this.facingMode,
+                                width: { ideal: 4096 },
+                                height: { ideal: 2160 }
+                            }
+                        };
+                        this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+                        this.$refs.video.srcObject = this.stream;
+                        
+                        // 移除这里的尺寸设置，因为我们已经在CSS中设置了
+                        this.$refs.video.play();  
+                    } catch (error) {
+                        console.error('无法访问摄像头:', error);
+                        alert('无法访问摄像头，请确保已授予相机权限。');
+                    }
+                },
+                async switchCamera(mode, isUltraWide = false) {
+                    if (this.stream) {
+                        this.stream.getTracks().forEach(track => track.stop());
+                    }
+                    this.facingMode = mode;
+                    const constraints = {
+                        video: {
+                            facingMode: this.facingMode,
+                            width: { ideal: 4096 },
+                            height: { ideal: 2160 },
+                            advanced: isUltraWide ? [{ zoom: 0.5 }] : []
+                        }
+                    };
+                    await this.startCamera();
+                },
+                takePhoto() {
+                    const video = this.$refs.video;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    const ctx = canvas.getContext('2d');
+                    
+                    if (this.facingMode === 'user') {
+                        ctx.scale(-1, 1);
+                        ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+                    } else {
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    }
+                    
+                    this.photoData = canvas.toDataURL('image/jpeg', 1.0);
+                    this.photoTaken = true;
+                    this.showModal = true; // 显示模态框
+                    console.log('Modal should be shown:', this.showModal);
+                    this.uploadPhoto();
+                },
+                confirmPhoto() {
+                    this.uploadPhoto();
+                    this.showModal = false;
+                },
+                retakePhoto() {
+                    this.photoTaken = false;
+                    this.photoData = '';
+                    this.showModal = false;
+                    this.startCamera();
+                },
+                async uploadPhoto() {
+                    // try {
+                    //     const response = await axios.post('您的上传API地址', {
+                    //         image: this.photoData
+                    //     });
+                    //     console.log('图片上传成功:', response.data);
+                    //     alert('图片上传成功！');
+                    // } catch (error) {
+                    //     console.error('图片上传失败:', error);
+                    //     alert('图片上传失败，请重试。');
+                    // }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
